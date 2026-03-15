@@ -8,7 +8,7 @@ EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM
 
 _model: SentenceTransformer | None = None
 
-def get_model() -> SentenceTransformer:
+def get_embedding_model() -> SentenceTransformer:
     global _model
     if _model is None:
         print(f"Loading embedding model: {EMBEDDING_MODEL}")
@@ -17,4 +17,4 @@ def get_model() -> SentenceTransformer:
     return _model
 
 def embed(text: str) -> list[float]:
-    return get_model().encode(text).tolist()
+    return get_embedding_model().encode(text).tolist()
