@@ -105,6 +105,19 @@ jobs:
               echo "Swap already exists, skipping."
             fi
 
+            echo "==> Install Docker Compose v2 plugin if not available"
+            if ! docker compose version &>/dev/null; then
+              echo "Docker Compose v2 not found, installing..."
+              DOCKER_CONFIG=${DOCKER_CONFIG:-$HOME/.docker}
+              mkdir -p "$DOCKER_CONFIG/cli-plugins"
+              curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 \
+                -o "$DOCKER_CONFIG/cli-plugins/docker-compose"
+              chmod +x "$DOCKER_CONFIG/cli-plugins/docker-compose"
+              echo "Docker Compose v2 installed: $(docker compose version)"
+            else
+              echo "Docker Compose v2 already available: $(docker compose version)"
+            fi
+
             echo "==> [2/5] Log in to DockerHub"
             echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
 
