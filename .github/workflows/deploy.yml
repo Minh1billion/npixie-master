@@ -66,6 +66,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # Remove obsolete version field from docker-compose.yml before copying
+      - name: Strip obsolete version field from docker-compose.yml
+        run: sed -i '/^version:/d' docker-compose.yml
+
       - name: Copy docker-compose.yml to EC2
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -90,6 +94,26 @@ jobs:
 
             APP_DIR="/home/${{ secrets.EC2_USER }}/npixie"
             cd "$APP_DIR"
+
+            echo "==> [0/5] Write .env file from secrets"
+            cat > "$APP_DIR/.env" << 'EOF'
+            QDRANT_HOST=qdrant
+            QDRANT_PORT=6333
+            QDRANT_COLLECTION=npixie_lore
+            SUPABASE_URL=${{ vars.SUPABASE_URL }}
+            SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}
+            EMBEDDING_MODEL=${{ vars.EMBEDDING_MODEL }}
+            GROQ_API_KEY=${{ secrets.GROQ_API_KEY }}
+            GROQ_MODEL=${{ vars.GROQ_MODEL }}
+            DEFAULT_NPC=nara
+            CHUNK_SIZE=500
+            CHUNK_OVERLAP=50
+            TOP_K=3
+            HF_TOKEN=${{ secrets.HF_TOKEN }}
+            HF_REPO_ID=${{ vars.HF_REPO_ID }}
+            EOF
+            chmod 600 "$APP_DIR/.env"
+            echo ".env written."
 
             echo "==> [1/5] Check and configure swap (required for t3.small with 2GB RAM)"
             if ! swapon --show | grep -q '/swapfile'; then
