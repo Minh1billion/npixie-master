@@ -21,6 +21,8 @@ app.include_router(admin_router)
 async def startup():
     from rag.embedder import get_model
     from rag.generator import get_client
+    from rag.supabase_client import get_supabase
     get_model()
     get_client()
+    get_supabase()
     print("Npixie API ready!")

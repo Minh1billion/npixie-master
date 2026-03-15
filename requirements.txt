@@ -4,8 +4,9 @@ uvicorn[standard]
 pydantic
 python-multipart
 
-# Vector DB
+# DB
 qdrant-client
+supabase
 
 # Embedding
 sentence-transformers
