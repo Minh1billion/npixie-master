@@ -1,0 +1,20 @@
+# API
+fastapi
+uvicorn[standard]
+pydantic
+
+# Vector DB
+qdrant-client
+
+# Embedding
+sentence-transformers
+
+# LLM
+groq
+
+# Document loading
+pyyaml
+
+# Utils
+python-dotenv
+tqdm
