@@ -1,65 +1,68 @@
 import os
+import sys
 from dotenv import load_dotenv
-from sentence_transformers import SentenceTransformer
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
 import uuid
 
+# Add project root to path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from rag.embedder import embed, get_model
+
 load_dotenv()
 
-QDRANT_HOST = os.getenv("QDRANT_HOST", "qdrant")
-QDRANT_PORT = os.getenv("QDRANT_PORT", 6333)
-COLLECTION_NAME = os.getenv("COLLECTION_NAME", "npixie_lore")
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
-CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", 500))
-CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", 50))
-LORE_FILE = os.getenv("LORE_FILE", "data/lore/LORE.md")
+# ── Config ──────────────────────────────────────
+QDRANT_HOST     = os.getenv("QDRANT_HOST", "localhost")
+QDRANT_PORT     = int(os.getenv("QDRANT_PORT", 6333))
+COLLECTION_NAME = os.getenv("QDRANT_COLLECTION", "npixie_lore")
+CHUNK_SIZE      = int(os.getenv("CHUNK_SIZE", 500))
+CHUNK_OVERLAP   = int(os.getenv("CHUNK_OVERLAP", 50))
+LORE_FILE       = "./data/lore/LORE.md"
 
-# Load Lore
-print("LORE LOADING...")
+# ── Step 1: Load LORE.md ────────────────────────
+print("📖 Loading lore file...")
 with open(LORE_FILE, "r", encoding="utf-8") as f:
     text = f.read()
 
-# Chunking text from Lore
-def chunk_text(text, chunk_size, overlap):
+# ── Step 2: Chunk ───────────────────────────────
+def chunk_text(text: str, chunk_size: int, overlap: int) -> list[str]:
     chunks = []
     start = 0
     while start < len(text):
-        end = start + chunk_size
-        chunks.append(text[start:end])
+        chunks.append(text[start:start + chunk_size])
         start += chunk_size - overlap
     return chunks
 
-print("CHUNKING LORE...")
+print("✂️  Chunking text...")
 chunks = chunk_text(text, CHUNK_SIZE, CHUNK_OVERLAP)
-print(f"    LORE CHUNKED INTO {len(chunks)} CHUNKS")
+print(f"   → {len(chunks)} chunks created")
 
-# Embedding chunks
-print("EMBEDDING CHUNKS...")
-model = SentenceTransformer(EMBEDDING_MODEL)
-vectors = model.encode(chunks, show_progress_bar=True)
+# ── Step 3: Embed (dùng singleton từ embedder) ──
+print("🔢 Embedding chunks...")
+get_model()  # warm up
+vectors = [embed(chunk) for chunk in chunks]
 
-# Save to qdrant
-print("SAVING TO QDRANT...")
+# ── Step 4: Save to Qdrant ──────────────────────
+print("💾 Saving to Qdrant...")
 client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
 
-# Create collection if it doesn't exist
 client.recreate_collection(
     collection_name=COLLECTION_NAME,
-    vectors_config=VectorParams(size=vectors.shape[1], distance=Distance.COSINE),
+    vectors_config=VectorParams(
+        size=len(vectors[0]),
+        distance=Distance.COSINE
+    ),
 )
 
-# Upload points
 points = [
     PointStruct(
         id=str(uuid.uuid4()),
-        vector=vectors[i].tolist(),
-        payload={"text": chunks[i], "source": "LORE.md"},
+        vector=vectors[i],
+        payload={"text": chunks[i], "source": "LORE.md"}
     )
     for i in range(len(chunks))
 ]
 
 client.upsert(collection_name=COLLECTION_NAME, points=points)
-print(f"    {len(chunks)} CHUNKS UPLOADED TO QDRANT")
-
-print("INGEST COMPLETE")
+print(f"✅ Done! {len(points)} chunks saved to '{COLLECTION_NAME}'")
