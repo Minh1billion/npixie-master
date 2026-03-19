@@ -99,7 +99,8 @@ jobs:
             CHUNK_SIZE=500
             CHUNK_OVERLAP=50
             TOP_K=10
-            RERANKER_TOP_N=3
+            RERANKER_MODEL=${{ vars.RERANKER_MODEL }}
+            RERANKER_TOP_K=${{ vars.RERANKER_TOP_K }}
             HF_TOKEN=${{ secrets.HF_TOKEN }}
             HF_REPO_ID=${{ vars.HF_REPO_ID }}
             EOF
