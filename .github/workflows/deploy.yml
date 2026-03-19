@@ -13,9 +13,6 @@ jobs:
     name: Build & Push Docker Image
     runs-on: ubuntu-latest
 
-    outputs:
-      image_tag: ${{ steps.meta.outputs.version }}
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -61,14 +58,14 @@ jobs:
       - name: Strip obsolete version field from docker-compose.yml
         run: sed -i '/^version:/d' docker-compose.yml
 
-      - name: Copy docker-compose.yml to EC2
+      - name: Copy files to EC2
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
-          source: "docker-compose.yml"
+          source: "docker-compose.yml,scripts/download_model.py"
           target: "/home/${{ secrets.EC2_USER }}/npixie"
 
       - name: Deploy via SSH
@@ -81,12 +78,11 @@ jobs:
           command_timeout: 20m
           script: |
             set -e
-
             APP_DIR="/home/${{ secrets.EC2_USER }}/npixie"
             cd "$APP_DIR"
 
-            echo "==> [0/6] Write .env file from secrets"
-            cat > "$APP_DIR/.env" << 'EOF'
+            echo "==> [0/6] Write .env"
+            cat > "$APP_DIR/.env" << EOF
             QDRANT_HOST=qdrant
             QDRANT_PORT=6333
             QDRANT_COLLECTION=npixie_lore
@@ -98,19 +94,15 @@ jobs:
             DEFAULT_NPC=nara
             CHUNK_SIZE=500
             CHUNK_OVERLAP=50
-            TOP_K=10
+            TOP_K=${{ vars.TOP_K }}
             RERANKER_MODEL=${{ vars.RERANKER_MODEL }}
             RERANKER_TOP_K=${{ vars.RERANKER_TOP_K }}
             HF_TOKEN=${{ secrets.HF_TOKEN }}
             HF_REPO_ID=${{ vars.HF_REPO_ID }}
             EOF
             chmod 600 "$APP_DIR/.env"
-            echo ".env written."
 
-            echo "==> [0.5/6] Ensure python3 and pip available"
-            sudo apt-get install -y python3 python3-pip -q || true
-
-            echo "==> [1/6] Check and configure swap"
+            echo "==> [1/6] Configure swap"
             if ! swapon --show | grep -q '/swapfile'; then
               sudo fallocate -l 2G /swapfile
               sudo chmod 600 /swapfile
@@ -119,7 +111,7 @@ jobs:
               grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
             fi
 
-            echo "==> Install Docker Compose v2 plugin if not available"
+            echo "==> Install Docker Compose v2 if not available"
             if ! docker compose version &>/dev/null; then
               DOCKER_CONFIG=${DOCKER_CONFIG:-$HOME/.docker}
               mkdir -p "$DOCKER_CONFIG/cli-plugins"
@@ -131,34 +123,27 @@ jobs:
             echo "==> [2/6] Log in to DockerHub"
             echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
 
-            echo "==> [3/6] Download model from HuggingFace if not exists"
+            echo "==> [3/6] Download model if not exists"
             mkdir -p "$APP_DIR/specxel/models"
             if [ ! -f "$APP_DIR/specxel/models/best_model.pth" ]; then
-              pip3 install -q huggingface_hub
-              HF_TOKEN="${{ secrets.HF_TOKEN }}" HF_REPO_ID="${{ vars.HF_REPO_ID }}" python3 -c "
-              import os, shutil
-              from huggingface_hub import hf_hub_download
-              path = hf_hub_download(repo_id=os.environ['HF_REPO_ID'], filename='best_model.pth', token=os.environ['HF_TOKEN'], local_dir='/tmp/hf_model')
-              shutil.copy(path, os.environ['MODEL_DEST'])
-              print('Model downloaded.')
-              " MODEL_DEST="$APP_DIR/specxel/models/best_model.pth"
+              sudo apt-get install -y python3 python3-pip -q || true
+              pip3 install -q huggingface_hub python-dotenv
+              cd "$APP_DIR" && python3 scripts/download_model.py
             else
-              echo "Model already exists, skipping download."
+              echo "Model already exists, skipping."
             fi
 
             echo "==> [4/6] Pull latest image"
             docker pull ${{ env.DOCKERHUB_IMAGE }}:latest
 
-            echo "==> [5/6] Stop and remove existing containers"
+            echo "==> [5/6] Stop existing containers"
             docker compose down --remove-orphans || true
 
-            echo "==> [6/6] Start containers with new image"
+            echo "==> [6/6] Start containers"
             export API_IMAGE="${{ env.DOCKERHUB_IMAGE }}:latest"
             docker compose up -d --no-build
 
-            echo "==> Pruning unused images"
             docker image prune -f
-
             echo "Deploy complete."
             docker compose ps
 
@@ -173,22 +158,16 @@ jobs:
 
       - name: Check API health endpoint
         run: |
-          echo "Checking API at http://${{ secrets.EC2_HOST }}:8000/health"
-
           for i in {1..5}; do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
               --connect-timeout 10 \
               http://${{ secrets.EC2_HOST }}:8000/health || echo "000")
-
             echo "Attempt $i: HTTP $STATUS"
-
             if [ "$STATUS" = "200" ]; then
               echo "API is healthy."
               exit 0
             fi
-
             sleep 10
           done
-
-          echo "API did not respond after 5 attempts."
+          echo "API did not respond."
           exit 1
