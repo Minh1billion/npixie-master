@@ -136,12 +136,12 @@ jobs:
             if [ ! -f "$APP_DIR/specxel/models/best_model.pth" ]; then
               pip3 install -q huggingface_hub
               HF_TOKEN="${{ secrets.HF_TOKEN }}" HF_REPO_ID="${{ vars.HF_REPO_ID }}" python3 -c "
-import os, shutil
-from huggingface_hub import hf_hub_download
-path = hf_hub_download(repo_id=os.environ['HF_REPO_ID'], filename='best_model.pth', token=os.environ['HF_TOKEN'], local_dir='/tmp/hf_model')
-shutil.copy(path, os.environ['MODEL_DEST'])
-print('Model downloaded.')
-" MODEL_DEST="$APP_DIR/specxel/models/best_model.pth"
+              import os, shutil
+              from huggingface_hub import hf_hub_download
+              path = hf_hub_download(repo_id=os.environ['HF_REPO_ID'], filename='best_model.pth', token=os.environ['HF_TOKEN'], local_dir='/tmp/hf_model')
+              shutil.copy(path, os.environ['MODEL_DEST'])
+              print('Model downloaded.')
+              " MODEL_DEST="$APP_DIR/specxel/models/best_model.pth"
             else
               echo "Model already exists, skipping download."
             fi
