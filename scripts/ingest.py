@@ -5,10 +5,9 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
 import uuid
 
-# Add project root to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from rag.embedder import embed, get_model
+from rag.embedder import embed, get_embedding_model
 
 load_dotenv()
 
@@ -34,13 +33,17 @@ def chunk_text(text: str, chunk_size: int, overlap: int) -> list[str]:
 chunks = chunk_text(text, CHUNK_SIZE, CHUNK_OVERLAP)
 
 print("🔢 Embedding chunks...")
-get_model()
+get_embedding_model()
 vectors = [embed(chunk) for chunk in chunks]
 
 print("💾 Saving to Qdrant...")
 client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
 
-client.recreate_collection(
+cols = [c.name for c in client.get_collections().collections]
+if COLLECTION_NAME in cols:
+    client.delete_collection(COLLECTION_NAME)
+
+client.create_collection(
     collection_name=COLLECTION_NAME,
     vectors_config=VectorParams(
         size=len(vectors[0]),
