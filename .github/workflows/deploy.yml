@@ -65,7 +65,7 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
-          source: "docker-compose.yml,scripts/download_model.py,data"
+          source: "docker-compose.yml,scripts/download_model.py"
           target: "/home/${{ secrets.EC2_USER }}/npixie"
 
       - name: Deploy via SSH
