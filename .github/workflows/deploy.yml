@@ -106,6 +106,9 @@ jobs:
             chmod 600 "$APP_DIR/.env"
             echo ".env written."
 
+            echo "==> [0.5/6] Ensure python3 and pip available"
+            sudo apt-get install -y python3 python3-pip -q || true
+
             echo "==> [1/6] Check and configure swap"
             if ! swapon --show | grep -q '/swapfile'; then
               sudo fallocate -l 2G /swapfile
@@ -131,18 +134,13 @@ jobs:
             mkdir -p "$APP_DIR/specxel/models"
             if [ ! -f "$APP_DIR/specxel/models/best_model.pth" ]; then
               pip3 install -q huggingface_hub
-              python3 - << PYEOF
-            from huggingface_hub import hf_hub_download
-            import os, shutil
-            path = hf_hub_download(
-                repo_id=os.environ["HF_REPO_ID"],
-                filename="best_model.pth",
-                token=os.environ["HF_TOKEN"],
-                local_dir="/tmp/hf_model"
-            )
-            shutil.copy(path, "$APP_DIR/specxel/models/best_model.pth")
-            print("Model downloaded.")
-            PYEOF
+              HF_TOKEN="${{ secrets.HF_TOKEN }}" HF_REPO_ID="${{ vars.HF_REPO_ID }}" python3 -c "
+import os, shutil
+from huggingface_hub import hf_hub_download
+path = hf_hub_download(repo_id=os.environ['HF_REPO_ID'], filename='best_model.pth', token=os.environ['HF_TOKEN'], local_dir='/tmp/hf_model')
+shutil.copy(path, os.environ['MODEL_DEST'])
+print('Model downloaded.')
+" MODEL_DEST="$APP_DIR/specxel/models/best_model.pth"
             else
               echo "Model already exists, skipping download."
             fi
