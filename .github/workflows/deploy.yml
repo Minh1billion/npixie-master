@@ -65,7 +65,7 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
-          source: "docker-compose.yml,scripts/download_model.py"
+          source: "docker-compose.yml,scripts/download_model.py,data"
           target: "/home/${{ secrets.EC2_USER }}/npixie"
 
       - name: Deploy via SSH
@@ -100,6 +100,7 @@ jobs:
             HF_TOKEN=${{ secrets.HF_TOKEN }}
             HF_REPO_ID=${{ vars.HF_REPO_ID }}
             EOF
+            sed -i 's/^[[:space:]]*//' "$APP_DIR/.env"
             chmod 600 "$APP_DIR/.env"
 
             echo "==> [1/6] Configure swap"
