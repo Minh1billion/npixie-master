@@ -8,7 +8,7 @@ load_dotenv()
 QDRANT_HOST     = os.getenv("QDRANT_HOST", "localhost")
 QDRANT_PORT     = int(os.getenv("QDRANT_PORT", 6333))
 COLLECTION_NAME = os.getenv("QDRANT_COLLECTION", "npixie_lore")
-TOP_K           = int(os.getenv("TOP_K", 3))
+TOP_K           = int(os.getenv("TOP_K", 10))
 
 _client: QdrantClient | None = None
 
@@ -18,14 +18,13 @@ def get_client() -> QdrantClient:
         _client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
     return _client
 
-def retrieve(query: str) -> list[str]:
-    """Find the most relevant chunks for a given query."""
+def retrieve(query: str, top_k: int = TOP_K) -> list[str]:
     query_vector = embed(query)
 
     response = get_client().query_points(
         collection_name=COLLECTION_NAME,
         query=query_vector,
-        limit=TOP_K,
+        limit=top_k,
     )
 
     return [hit.payload["text"] for hit in response.points]

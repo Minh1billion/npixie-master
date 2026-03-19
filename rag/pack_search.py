@@ -1,22 +1,26 @@
 from rag.supabase_client import get_supabase
 
-# Map NPC domain - categories
 NPC_CATEGORY_MAP = {
-    "nara"  : [],  # all categories
+    "nara"  : [],
     "zolt"  : ["combat", "weapons", "projectiles", "platformer", "enemies"],
     "lyra"  : ["tilesets", "terrain", "nature", "backgrounds", "buildings", "ruins"],
     "vexis" : ["ui-elements", "icons", "spells", "effects", "fonts"],
     "echo"  : ["music", "sfx", "ambient"],
 }
 
+NPC_NAME_KEYWORDS = {
+    "nara"  : [],
+    "zolt"  : ["zolt", "combat", "warrior", "weapon", "fight"],
+    "lyra"  : ["lyra", "world", "nature", "environment", "grove"],
+    "vexis" : ["vexis", "arcane", "ui", "icon", "spell"],
+    "echo"  : ["echo", "audio", "sound", "music", "sfx"],
+}
+
 def search_packs(query: str, npc_id: str, limit: int = 3) -> list[dict]:
-    """Search asset packs from Supabase filtered by NPC domain."""
     sb = get_supabase()
 
-    # Get category slugs for this NPC
     category_slugs = NPC_CATEGORY_MAP.get(npc_id, [])
 
-    # Get category IDs from slugs
     if category_slugs:
         cat_response = sb.table("categories") \
             .select("id, slug") \
@@ -26,18 +30,25 @@ def search_packs(query: str, npc_id: str, limit: int = 3) -> list[dict]:
     else:
         category_ids = []
 
-    # Search packs by name matching query
-    pack_query = sb.table("asset_pack") \
+    # 1. Match by pack name
+    packs = sb.table("asset_pack") \
         .select("id, name, description, price, image_url") \
         .ilike("name", f"%{query}%") \
-        .is_("deleted_at", "null") \
-        .limit(limit)
+        .is_("deleted_at", None) \
+        .limit(limit) \
+        .execute().data
 
-    packs = pack_query.execute().data
+    # 2. Match by description
+    if not packs:
+        packs = sb.table("asset_pack") \
+            .select("id, name, description, price, image_url") \
+            .ilike("description", f"%{query}%") \
+            .is_("deleted_at", None) \
+            .limit(limit) \
+            .execute().data
 
-    # If no name match, fallback to category filter
+    # 3. Fallback: category filter via sprite_categories
     if not packs and category_ids:
-        # Get pack IDs via sprites - categories
         sprite_cats = sb.table("sprite_categories") \
             .select("sprite_id") \
             .in_("category_id", category_ids) \
@@ -57,17 +68,37 @@ def search_packs(query: str, npc_id: str, limit: int = 3) -> list[dict]:
                 packs = sb.table("asset_pack") \
                     .select("id, name, description, price, image_url") \
                     .in_("id", pack_ids) \
-                    .is_("deleted_at", "null") \
+                    .is_("deleted_at", None) \
                     .limit(limit) \
                     .execute().data
+
+    # 4. Fallback: match by NPC name keywords in pack name
+    if not packs:
+        npc_keywords = NPC_NAME_KEYWORDS.get(npc_id, [])
+        for keyword in npc_keywords:
+            packs = sb.table("asset_pack") \
+                .select("id, name, description, price, image_url") \
+                .ilike("name", f"%{keyword}%") \
+                .is_("deleted_at", None) \
+                .limit(limit) \
+                .execute().data
+            if packs:
+                break
+
+    # 5. Last resort: return all non-deleted packs up to limit
+    if not packs:
+        packs = sb.table("asset_pack") \
+            .select("id, name, description, price, image_url") \
+            .is_("deleted_at", None) \
+            .limit(limit) \
+            .execute().data
 
     return packs
 
 
 def format_packs_for_prompt(packs: list[dict]) -> str:
-    """Format pack list into string for LLM context."""
     if not packs:
-            return "IMPORTANT: There are currently NO asset packs available in the marketplace. Do NOT recommend or mention any specific pack names. Only speak generally about what kinds of assets would help, and invite the user to check back later."
+        return "IMPORTANT: There are currently NO asset packs available in the marketplace. Do NOT recommend or mention any specific pack names. Only speak generally about what kinds of assets would help, and invite the user to check back later."
 
     lines = ["Here are some relevant asset packs from the Pixelara marketplace:\n"]
     for p in packs:

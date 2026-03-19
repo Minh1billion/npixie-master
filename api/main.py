@@ -13,10 +13,12 @@ logger = get_logger("api")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from rag.embedder import get_embedding_model
+    from rag.reranker import get_reranker_model
     from rag.generator import get_client
     from rag.supabase_client import get_supabase
     from specxel.pipeline import get_classify_model
     get_embedding_model()
+    get_reranker_model()
     get_client()
     get_supabase()
     get_classify_model()

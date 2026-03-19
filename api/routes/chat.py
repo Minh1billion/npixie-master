@@ -7,4 +7,4 @@ router = APIRouter()
 @router.post("/chat", response_model=ChatResponse)
 def chat_endpoint(req: ChatRequest):
     result = chat(query=req.message, npc_id=req.npc)
-    return ChatResponse(npc=result["npc"], reply=result["reply"])
+    return ChatResponse(npc=result["npc"], reply=result["reply"], packs=result["packs"])

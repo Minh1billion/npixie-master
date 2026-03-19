@@ -24,6 +24,11 @@ def _build_model(num_classes: int) -> nn.Module:
     return model
 
 def load_model() -> nn.Module:
+    if not MODEL_PATH.exists():
+        raise FileNotFoundError(
+            f"Model not found at {MODEL_PATH}. "
+            "Run scripts/download_model.py or mount the model file."
+        )
     ckpt = torch.load(MODEL_PATH, map_location=DEVICE)
     model = _build_model(num_classes=2)
     model.load_state_dict(ckpt["model_state"])

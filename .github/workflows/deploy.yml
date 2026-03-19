@@ -9,9 +9,6 @@ env:
   DOCKERHUB_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/npixie-master-api
 
 jobs:
-  # ─────────────────────────────────────────────
-  # JOB 1: Build and push image to DockerHub
-  # ─────────────────────────────────────────────
   build-and-push:
     name: Build & Push Docker Image
     runs-on: ubuntu-latest
@@ -29,11 +26,9 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # Setup Buildx for faster builds with layer caching
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Tags: latest + short SHA (e.g. sha-68c7175)
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -54,9 +49,6 @@ jobs:
           cache-from: type=registry,ref=${{ env.DOCKERHUB_IMAGE }}:buildcache
           cache-to: type=registry,ref=${{ env.DOCKERHUB_IMAGE }}:buildcache,mode=max
 
-  # ─────────────────────────────────────────────
-  # JOB 2: Deploy to EC2
-  # ─────────────────────────────────────────────
   deploy:
     name: Deploy to EC2
     runs-on: ubuntu-latest
@@ -66,7 +58,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Remove obsolete version field from docker-compose.yml before copying
       - name: Strip obsolete version field from docker-compose.yml
         run: sed -i '/^version:/d' docker-compose.yml
 
@@ -80,7 +71,6 @@ jobs:
           source: "docker-compose.yml"
           target: "/home/${{ secrets.EC2_USER }}/npixie"
 
-      # Timeout set to 20m to account for pulling a 3.23GB image
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -95,7 +85,7 @@ jobs:
             APP_DIR="/home/${{ secrets.EC2_USER }}/npixie"
             cd "$APP_DIR"
 
-            echo "==> [0/5] Write .env file from secrets"
+            echo "==> [0/6] Write .env file from secrets"
             cat > "$APP_DIR/.env" << 'EOF'
             QDRANT_HOST=qdrant
             QDRANT_PORT=6333
@@ -108,50 +98,62 @@ jobs:
             DEFAULT_NPC=nara
             CHUNK_SIZE=500
             CHUNK_OVERLAP=50
-            TOP_K=3
+            TOP_K=10
+            RERANKER_TOP_N=3
             HF_TOKEN=${{ secrets.HF_TOKEN }}
             HF_REPO_ID=${{ vars.HF_REPO_ID }}
             EOF
             chmod 600 "$APP_DIR/.env"
             echo ".env written."
 
-            echo "==> [1/5] Check and configure swap (required for t3.small with 2GB RAM)"
+            echo "==> [1/6] Check and configure swap"
             if ! swapon --show | grep -q '/swapfile'; then
-              echo "Creating 2GB swapfile..."
               sudo fallocate -l 2G /swapfile
               sudo chmod 600 /swapfile
               sudo mkswap /swapfile
               sudo swapon /swapfile
-              # Persist swap across reboots
               grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
-              echo "Swap enabled."
-            else
-              echo "Swap already exists, skipping."
             fi
 
             echo "==> Install Docker Compose v2 plugin if not available"
             if ! docker compose version &>/dev/null; then
-              echo "Docker Compose v2 not found, installing..."
               DOCKER_CONFIG=${DOCKER_CONFIG:-$HOME/.docker}
               mkdir -p "$DOCKER_CONFIG/cli-plugins"
               curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 \
                 -o "$DOCKER_CONFIG/cli-plugins/docker-compose"
               chmod +x "$DOCKER_CONFIG/cli-plugins/docker-compose"
-              echo "Docker Compose v2 installed: $(docker compose version)"
-            else
-              echo "Docker Compose v2 already available: $(docker compose version)"
             fi
 
-            echo "==> [2/5] Log in to DockerHub"
+            echo "==> [2/6] Log in to DockerHub"
             echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
 
-            echo "==> [3/5] Pull latest image"
+            echo "==> [3/6] Download model from HuggingFace if not exists"
+            mkdir -p "$APP_DIR/specxel/models"
+            if [ ! -f "$APP_DIR/specxel/models/best_model.pth" ]; then
+              pip3 install -q huggingface_hub
+              python3 - << PYEOF
+            from huggingface_hub import hf_hub_download
+            import os, shutil
+            path = hf_hub_download(
+                repo_id=os.environ["HF_REPO_ID"],
+                filename="best_model.pth",
+                token=os.environ["HF_TOKEN"],
+                local_dir="/tmp/hf_model"
+            )
+            shutil.copy(path, "$APP_DIR/specxel/models/best_model.pth")
+            print("Model downloaded.")
+            PYEOF
+            else
+              echo "Model already exists, skipping download."
+            fi
+
+            echo "==> [4/6] Pull latest image"
             docker pull ${{ env.DOCKERHUB_IMAGE }}:latest
 
-            echo "==> [4/5] Stop and remove existing containers (Recreate strategy)"
+            echo "==> [5/6] Stop and remove existing containers"
             docker compose down --remove-orphans || true
 
-            echo "==> [5/5] Start containers with new image"
+            echo "==> [6/6] Start containers with new image"
             export API_IMAGE="${{ env.DOCKERHUB_IMAGE }}:latest"
             docker compose up -d --no-build
 
@@ -161,9 +163,6 @@ jobs:
             echo "Deploy complete."
             docker compose ps
 
-  # ─────────────────────────────────────────────
-  # JOB 3: Post-deploy healthcheck
-  # ─────────────────────────────────────────────
   healthcheck:
     name: Post-deploy Healthcheck
     runs-on: ubuntu-latest

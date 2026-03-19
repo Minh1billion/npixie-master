@@ -12,7 +12,6 @@ from rag.embedder import embed, get_model
 
 load_dotenv()
 
-# ── Config ──────────────────────────────────────
 QDRANT_HOST     = os.getenv("QDRANT_HOST", "localhost")
 QDRANT_PORT     = int(os.getenv("QDRANT_PORT", 6333))
 COLLECTION_NAME = os.getenv("QDRANT_COLLECTION", "npixie_lore")
@@ -20,12 +19,10 @@ CHUNK_SIZE      = int(os.getenv("CHUNK_SIZE", 500))
 CHUNK_OVERLAP   = int(os.getenv("CHUNK_OVERLAP", 50))
 LORE_FILE       = "./data/lore/LORE.md"
 
-# ── Step 1: Load LORE.md ────────────────────────
 print("📖 Loading lore file...")
 with open(LORE_FILE, "r", encoding="utf-8") as f:
     text = f.read()
 
-# ── Step 2: Chunk ───────────────────────────────
 def chunk_text(text: str, chunk_size: int, overlap: int) -> list[str]:
     chunks = []
     start = 0
@@ -34,16 +31,12 @@ def chunk_text(text: str, chunk_size: int, overlap: int) -> list[str]:
         start += chunk_size - overlap
     return chunks
 
-print("✂️  Chunking text...")
 chunks = chunk_text(text, CHUNK_SIZE, CHUNK_OVERLAP)
-print(f"   → {len(chunks)} chunks created")
 
-# ── Step 3: Embed (dùng singleton từ embedder) ──
 print("🔢 Embedding chunks...")
-get_model()  # warm up
+get_model()
 vectors = [embed(chunk) for chunk in chunks]
 
-# ── Step 4: Save to Qdrant ──────────────────────
 print("💾 Saving to Qdrant...")
 client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
 

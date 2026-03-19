@@ -10,12 +10,15 @@ services:
     restart: unless-stopped
 
   api:
-    image: ${API_IMAGE}
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    image: ${API_IMAGE:-npixie-api-local}
     container_name: npixie-api
     ports:
       - "8000:8000"
     volumes:
-      - ./models:/app/models
+      - ./specxel/models:/app/specxel/models
       - ./data:/app/data
     env_file:
       - .env
